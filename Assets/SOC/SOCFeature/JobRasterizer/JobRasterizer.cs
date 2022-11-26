@@ -17,10 +17,12 @@ namespace SoftOcclusionCulling
         Matrix4x4 _matProjection;
 
         NativeArray<Color> _frameBuffer;        
-        NativeArray<float> _depthBuffer;        
+        NativeArray<float> _depthBuffer;
+        NativeArray<bool> _needMoveToCullingLayer;
 
         Color[] temp_buf;
         float[] temp_depth_buf;
+        bool[] temp_needMove_buf;
 
         public Texture2D texture;        
 
@@ -56,10 +58,13 @@ namespace SoftOcclusionCulling
 
             _frameBuffer = new NativeArray<Color>(bufSize, Allocator.Persistent);
             _depthBuffer = new NativeArray<float>(bufSize, Allocator.Persistent);
+            _needMoveToCullingLayer = new NativeArray<bool>(bufSize, Allocator.Persistent);
 
             temp_buf = new Color[bufSize];
             temp_depth_buf = new float[bufSize];
+            temp_needMove_buf = new bool[bufSize];
             URUtils.FillArray<float>(temp_depth_buf,0);
+            URUtils.FillArray<bool>(temp_needMove_buf,true);
         }
 
         public void Clear(BufferMask mask)
@@ -102,18 +107,23 @@ namespace SoftOcclusionCulling
         public void DrawObject(RenderingObject ro)
         {
             Profiler.BeginSample("JobRasterizer.DrawObject");
+            if (ro.mesh == null || ro.jobData == null) {
+                Profiler.EndSample();
+                return;
+            }
+            _needMoveToCullingLayer.CopyFrom(temp_needMove_buf);
             Mesh mesh = ro.mesh;
             
             _matModel = ro.GetModelMatrix();                      
-
+            
             Matrix4x4 mvp = _matProjection * _matView * _matModel;
             if(_passSettings.FrustumCulling && URUtils.FrustumCulling(mesh.bounds, mvp)){                
                 ProfileManager.EndSample();
                 return;
             }
-
+            
             Matrix4x4 normalMat = _matModel.inverse.transpose;
-
+            
             _verticesAll += mesh.vertexCount;
             _trianglesAll += ro.cpuData.MeshTriangles.Length / 3;
             
@@ -127,8 +137,8 @@ namespace SoftOcclusionCulling
             vsJob.normalMat = normalMat;
             vsJob.result = vsOutResult;
             JobHandle vsHandle = vsJob.Schedule(vsOutResult.Length, 1);                        
-
-            TriangleJob triJob = new TriangleJob();            
+            
+            TriangleJob triJob = new TriangleJob();
             triJob.trianglesData = ro.jobData.trianglesData;
             triJob.uvData = ro.jobData.uvData;
             triJob.vsOutput = vsOutResult;
@@ -142,15 +152,24 @@ namespace SoftOcclusionCulling
             triJob.UseBilinear = _passSettings.BilinearSample;
             triJob.fsType = _passSettings.FragmentShaderType;
             triJob.Uniforms = Uniforms;
+            triJob.NeedMoveToCullingLayer = _needMoveToCullingLayer;
             JobHandle triHandle = triJob.Schedule(ro.jobData.trianglesData.Length, 2, vsHandle);
             triHandle.Complete();
-
+            
+            foreach (var var in _needMoveToCullingLayer)
+            {
+                if (var == false)
+                {
+                    ro.NeedMoveToCullingLayer = false;
+                    break;
+                }
+            }
+            
             vsOutResult.Dispose();
             
             Profiler.EndSample();
         }
-
-
+        
         public void UpdateFrame()
         {
             Profiler.BeginSample("JobRasterizer.UpdateFrame");
@@ -166,7 +185,7 @@ namespace SoftOcclusionCulling
                     for (int i = 0; i < _depthBuffer.Length; ++i)
                     {
                         //depth_buf中的值范围是[0,1]，且最近处为1，最远处为0。因此可视化后背景是黑色
-                        float c = _depthBuffer[i]; 
+                        float c = _depthBuffer[i];
                         if(_passSettings.DisplayBuffer == DisplayBufferType.DepthRed)
                         {
                             temp_buf[i] = new Color(c, 0, 0);
@@ -174,11 +193,11 @@ namespace SoftOcclusionCulling
                         else
                         {
                             temp_buf[i] = new Color(c, c, c);
-                        }                        
+                        }
                     }
                     texture.SetPixels(temp_buf);
                     break;
-            }                                
+            }
             
             texture.Apply();
 
@@ -190,11 +209,17 @@ namespace SoftOcclusionCulling
             Profiler.EndSample();
         }
 
+        ~JobRasterizer()
+        {
+            Debug.Log("JobRasterizer.Release");
+            Release();
+        }
         public void Release()
         {
             texture = null;
             _frameBuffer.Dispose();
             _depthBuffer.Dispose();
+            _needMoveToCullingLayer.Dispose();
             temp_buf = null;
             temp_depth_buf = null;
         }

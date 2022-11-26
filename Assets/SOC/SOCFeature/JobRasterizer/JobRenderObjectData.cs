@@ -34,6 +34,11 @@ namespace SoftOcclusionCulling
             }
         }
 
+        ~JobRenderObjectData()
+        {
+            Release();
+        }
+        
         public void Release()
         {
             positionData.Dispose();  

@@ -20,6 +20,10 @@ namespace SoftOcclusionCulling
         public NativeArray<Color> frameBuffer;
         [NativeDisableParallelForRestriction]
         public NativeArray<float> depthBuffer;
+        
+        // 判断遮挡
+        [NativeDisableParallelForRestriction]
+        public NativeArray<bool> NeedMoveToCullingLayer;
 
         public int screenWidth;
         public int screenHeight; 
@@ -34,9 +38,9 @@ namespace SoftOcclusionCulling
         public ShaderType fsType;  
 
         public ShaderUniforms Uniforms;
-        
+
         public void Execute(int index)
-        {            
+        {
             Vector3Int triangle = trianglesData[index];
             int idx0 = triangle.x;
             int idx1 = triangle.y;
@@ -226,8 +230,10 @@ namespace SoftOcclusionCulling
                     
                     //深度测试(注意我们这儿的z值越大越靠近near plane，因此大值通过测试）
                     int index = GetIndex(x, y);
+                    // NeedMoveToCullingLayer[index] = true;
                     if(zp >= depthBuffer[index])
                     {
+                        NeedMoveToCullingLayer[index] = false;
                         depthBuffer[index] = zp;
                         
                         //透视校正插值                            

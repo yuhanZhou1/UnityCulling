@@ -35,6 +35,12 @@ namespace URasterizer
             }                      
         }
 
+        ~JobRenderObjectData()
+        {
+            Debug.Log("JobRenderObjectData.Release");
+            Release();
+        }
+
         public void Release()
         {
             positionData.Dispose();  

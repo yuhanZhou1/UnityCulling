@@ -216,6 +216,5 @@ namespace URasterizer
             ProfileManager.EndSample();
         }
 
-
     }
 }

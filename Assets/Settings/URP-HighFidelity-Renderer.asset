@@ -41,7 +41,8 @@ MonoBehaviour:
   m_RendererFeatures:
   - {fileID: -1878332245247344467}
   - {fileID: 7911473227793033929}
-  m_RendererFeatureMap: adc0de57c6d2eee5c9ea9de0fb32cb6d
+  - {fileID: 8266052279170100444}
+  m_RendererFeatureMap: adc0de57c6d2eee5c9ea9de0fb32cb6ddcecbda2c0eab672
   m_UseNativeRenderPass: 0
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
   xrSystemData: {fileID: 11400000, guid: 60e1133243b97e347b653163a8c01b64, type: 2}
@@ -93,5 +94,29 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 31f4616d47a6aed478ee6dabea5b8ef7, type: 3}
   m_Name: HizMapRenderFeature
   m_EditorClassIdentifier: 
-  m_Active: 1
+  m_Active: 0
   _computeShader: {fileID: 7200000, guid: 885634ce51807ce4f8d964120cd89171, type: 3}
+--- !u!114 &8266052279170100444
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3ad5f3ae983bcb242b622c2121de2fb8, type: 3}
+  m_Name: SoftOcclusionCullingFeature
+  m_EditorClassIdentifier: 
+  m_Active: 1
+  passSettings:
+    renderPassEvent: 250
+    RasterizerType: 0
+    CullingLayer:
+      serializedVersion: 2
+      m_Bits: 0
+    DisplayBuffer: 0
+    FrustumCulling: 1
+    BackFaceCulling: 1
+    BilinearSample: 0
+    FragmentShaderType: 1

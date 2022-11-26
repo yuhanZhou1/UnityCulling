@@ -98,7 +98,7 @@ namespace SoftOcclusionCulling
         public void DrawObject(RenderingObject ro)
         {
             Profiler.BeginSample("CPURasterizer.DrawObject");
-            if (ro.mesh == null) {
+            if (ro.mesh == null || ro.cpuData == null) {
                 Profiler.EndSample();
                 return;
             }

@@ -20,30 +20,29 @@ namespace SoftOcclusionCulling
         public bool NeedMoveToCullingLayer = true;
         private void Start()
         {
-            // var meshFilter = GetComponent<MeshFilter>();
-            // if (meshFilter != null) {
-            //     mesh = meshFilter.mesh;
-            // }
-            //
-            // var meshRenderer = GetComponent<MeshRenderer>();
-            // if (meshRenderer != null && meshRenderer.sharedMaterial!= null) {
-            //     texture = meshRenderer.sharedMaterial.mainTexture as Texture2D;
-            // }
-            //
-            // if (texture == null) {
-            //     texture = Texture2D.whiteTexture;
-            // }
-            //
-            // if (mesh != null) {
-            //     cpuData = new CPURenderObjectData(mesh);
-            //     // jobData = new JobRenderObjectData(mesh);
-            // }
+            var meshFilter = GetComponent<MeshFilter>();
+            if (meshFilter != null) {
+                mesh = meshFilter.mesh;
+            }
+            
+            var meshRenderer = GetComponent<MeshRenderer>();
+            if (meshRenderer != null && meshRenderer.sharedMaterial!= null) {
+                texture = meshRenderer.sharedMaterial.mainTexture as Texture2D;
+            }
+            
+            if (texture == null) {
+                texture = Texture2D.whiteTexture;
+            }
+            
+            if (mesh != null) {
+                cpuData = new CPURenderObjectData(mesh);
+                jobData = new JobRenderObjectData(mesh);
+            }
         }
         void OnDestroy()
         {
-            if (cpuData != null)
-                cpuData.Release();
-            // jobData.Release();                
+            cpuData.Release();
+            // jobData.Release();
         }
 
         public Matrix4x4 GetModelMatrix()

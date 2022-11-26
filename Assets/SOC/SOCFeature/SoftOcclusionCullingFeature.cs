@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
@@ -17,6 +18,7 @@ namespace SoftOcclusionCulling
 
     public class SoftOcclusionCullingFeature : ScriptableRendererFeature
     {
+        
         
         [System.Serializable]
         public class PassSettings
@@ -53,6 +55,7 @@ namespace SoftOcclusionCulling
         private SoftOcclusionCullingFeature.PassSettings passSettings;
         private Camera camera;
         private GameObject[] rootObjs;
+        // private GameObject scene;
         private List<RenderingObject> renderingObjects = new List<RenderingObject>();
 
         
@@ -77,7 +80,7 @@ namespace SoftOcclusionCulling
             InitSetup(ref renderingData);
             _lastUseUnityNativeRendering = passSettings.RasterizerType;
             OnOffUnityRendering();
-            InitMeshInfo();
+            // InitMeshInfo();
         }
 
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
@@ -103,6 +106,11 @@ namespace SoftOcclusionCulling
 
         public override void OnCameraCleanup(CommandBuffer cmd)
         {
+            // if (!camera.gameObject.activeSelf)
+            // {
+            //     if(_cpuRasterizer!= null) _cpuRasterizer.Release();
+            //     if(_jobRasterizer!= null) _jobRasterizer.Release();
+            // }
             // _cpuRasterizer.Release();
         }
 
@@ -111,6 +119,9 @@ namespace SoftOcclusionCulling
             switch(passSettings.RasterizerType){
                 case RasterizerType.CPU:
                     _rasterizer = _cpuRasterizer;
+                    break;
+                case RasterizerType.CPUJobs:
+                    _rasterizer = _jobRasterizer;
                     break;
             }
 
@@ -138,12 +149,12 @@ namespace SoftOcclusionCulling
         void InitSetup(ref RenderingData renderingData)
         {
             var scene = renderingData.cameraData.camera.gameObject.scene;
-            if (scene.isLoaded)
+            if (!scene.isLoaded)
             {
-                rootObjs = scene.GetRootGameObjects();
-                camera = renderingData.cameraData.camera;
+                return;
             }
-            
+            rootObjs = scene.GetRootGameObjects();
+            camera = renderingData.cameraData.camera;
             renderingObjects.Clear();
             foreach(var o in rootObjs)
             {
@@ -159,49 +170,54 @@ namespace SoftOcclusionCulling
             if (rawImg != null)// && _cpuRasterizer == null)
             {
                 RectTransform rect = rawImg.GetComponent<RectTransform>();
-                rect.sizeDelta = new Vector2(Screen.width/16, Screen.height/16);
+                rect.sizeDelta = new Vector2(Screen.width/8, Screen.height/8);
                 int w = Mathf.FloorToInt(rect.rect.width);
                 int h = Mathf.FloorToInt(rect.rect.height);
-                if(_cpuRasterizer == null)
+                if(_cpuRasterizer == null && passSettings.RasterizerType == RasterizerType.CPU)
                     _cpuRasterizer = new CPURasterizer(w, h, passSettings);
-                if(_jobRasterizer == null)
+                if(_jobRasterizer == null && passSettings.RasterizerType == RasterizerType.CPUJobs)
                     _jobRasterizer = new JobRasterizer(w, h, passSettings);
             }
 
             if (_statsPanel != null) {
-                _cpuRasterizer.StatDelegate += _statsPanel.StatDelegate;
+                if(_cpuRasterizer == null && passSettings.RasterizerType == RasterizerType.CPU)
+                    _cpuRasterizer.StatDelegate += _statsPanel.StatDelegate;
+                if(_jobRasterizer == null && passSettings.RasterizerType == RasterizerType.CPUJobs)
+                    _jobRasterizer.StatDelegate += _statsPanel.StatDelegate;
             }
         }
+        
         void InitMeshInfo()
         {
             // Init Mesh 
-            foreach (var obj in renderingObjects)
-            {
-                if (obj.gameObject.activeInHierarchy)
-                {
-                    if (obj.mesh == null)
-                    {
-                        var meshFilter = obj.gameObject.GetComponent<MeshFilter>();
-                        if (meshFilter != null)
-                            obj.mesh = meshFilter.sharedMesh;
-                    }
-
-                    if (obj.texture == null)
-                    {
-                        var meshRenderer = obj.GetComponent<MeshRenderer>();
-                        if (meshRenderer != null && meshRenderer.sharedMaterial != null)
-                            obj.texture = meshRenderer.sharedMaterial.mainTexture as Texture2D;
-                    }
-
-                    if(obj.texture==null)
-                        obj.texture = Texture2D.whiteTexture;
-
-                    if (obj.mesh != null && obj.cpuData == null)
-                    {
-                        obj.cpuData = new CPURenderObjectData(obj.mesh);
-                    }
-                }
-            }
+            // foreach (var obj in renderingObjects)
+            // {
+            //     if (obj.gameObject.activeInHierarchy)
+            //     {
+            //         if (obj.mesh == null)
+            //         {
+            //             var meshFilter = obj.gameObject.GetComponent<MeshFilter>();
+            //             if (meshFilter != null)
+            //                 obj.mesh = meshFilter.sharedMesh;
+            //         }
+            //
+            //         if (obj.texture == null)
+            //         {
+            //             var meshRenderer = obj.GetComponent<MeshRenderer>();
+            //             if (meshRenderer != null && meshRenderer.sharedMaterial != null)
+            //                 obj.texture = meshRenderer.sharedMaterial.mainTexture as Texture2D;
+            //         }
+            //
+            //         if(obj.texture==null)
+            //             obj.texture = Texture2D.whiteTexture;
+            //
+            //         if (obj.mesh != null && obj.cpuData == null)
+            //         {
+            //             obj.cpuData = new CPURenderObjectData(obj.mesh);
+            //             obj.jobData = new JobRenderObjectData(obj.mesh);
+            //         }
+            //     }
+            // }
         }
         void OnOffUnityRendering()
         {
