@@ -127,7 +127,7 @@ namespace SoftOcclusionCulling
             }
 
             if (_rasterizer != _lastRasterizer) {
-                // Debug.Log($"Change Rasterizer to {_rasterizer.Name}");
+                Debug.Log($"Change Rasterizer to {_rasterizer.Name}");
                 _lastRasterizer = _rasterizer;
                 
                 rawImg.texture = _rasterizer.ColorTexture;
@@ -245,7 +245,7 @@ namespace SoftOcclusionCulling
                 if (obj.gameObject.activeInHierarchy && obj.Occludee)
                 {
                     obj.NeedMoveToCullingLayer = true;
-                    _rasterizer.DrawObject(obj);
+                    _rasterizer.OcclusionCulling(obj);
                     if (obj.NeedMoveToCullingLayer) {
                         obj.gameObject.layer = 6;
                     }

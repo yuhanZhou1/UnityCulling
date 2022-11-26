@@ -263,6 +263,171 @@ namespace SoftOcclusionCulling
             
             // URUtils.FillArray(frame_buf,Color.blue);
         }
+        
+        public void OcclusionCulling(RenderingObject ro)
+        {
+            Profiler.BeginSample("CPURasterizer.DrawObject");
+            if (ro.mesh == null || ro.cpuData == null) {
+                Profiler.EndSample();
+                return;
+            }
+            Mesh mesh = ro.mesh;
+            _matModel = ro.GetModelMatrix();
+            
+            Matrix4x4 mvp = _matProjection * _matView * _matModel;
+            // 视锥体剔除
+            if (this.passSettings.FrustumCulling && URUtils.FrustumCulling(mesh.bounds, mvp)) {
+                Profiler.EndSample();
+                return;
+            }
+            
+            Vector4[] clipAABB = URUtils.GetClipAABB(mesh.bounds, mvp);
+            minClip = clipAABB[0];
+            maxClip = clipAABB[7];
+            
+            minClip.z /= minClip.w;
+            maxClip.z /= maxClip.w;
+            
+            minClip.z = minClip.z * 0.5f + 0.5f;
+            maxClip.z = maxClip.z * 0.5f + 0.5f;
+            
+            Matrix4x4 normalMat = _matModel.inverse.transpose;
+
+            _verticesAll += mesh.vertexCount;
+            _trianglesAll += ro.cpuData.MeshTriangles.Length / 3;
+            
+            //Unity模型本地坐标系也是左手系，需要转成我们使用的右手系
+            //1. z轴反转
+            //2. 三角形顶点环绕方向从顺时针改成逆时针
+            /// ------------- Vertex Shader -------------------
+            VSOutBuf[] vsOutput = ro.cpuData.vsOutputBuffer;
+            
+            Profiler.BeginSample("CPURasterizer.VertexShader CPU");
+            for (int i = 0; i < mesh.vertexCount; i++)
+            {
+                var vert = ro.cpuData.MeshVertices[i];
+                var objVert = new Vector4(vert.x, vert.y, -vert.z, 1);
+                vsOutput[i].clipPos = mvp * objVert;
+                vsOutput[i].worldPos = _matModel * objVert;
+                var normal = ro.cpuData.MeshNormals[i];
+                var objNormal = new Vector3(normal.x, normal.y, -normal.z);
+                vsOutput[i].objectNormal = objNormal;
+                vsOutput[i].worldNormal = normalMat * objNormal;
+            }
+            Profiler.EndSample();
+            
+            Profiler.BeginSample("CPURasterizer.PrimitiveAssembly");
+            
+            var indices = ro.cpuData.MeshTriangles;
+            for(int i=0; i< indices.Length; i+=3)
+            {         
+                /// -------------- Primitive Assembly -----------------
+            
+                //注意这儿对调了v0和v1的索引，因为原来的 0,1,2是顺时针的，对调后是 1,0,2是逆时针的
+                //Unity Quard模型的两个三角形索引分别是 0,3,1,3,0,2 转换后为 3,0,1,0,3,2
+                int idx0 = indices[i+1];
+                int idx1 = indices[i]; 
+                int idx2 = indices[i+2];  
+            
+                var v = _tmpVector4s;                                           
+                
+                v[0] = vsOutput[idx0].clipPos;
+                v[1] = vsOutput[idx1].clipPos;
+                v[2] = vsOutput[idx2].clipPos;                                  
+                
+                // ------ Clipping -------
+                if (Clipped(_tmpVector4s)) {
+                    continue;
+                }                
+            
+                // ------- Perspective division --------
+                //clip space to NDC
+                for (int k=0; k<3; k++)
+                {
+                    v[k].x /= v[k].w;
+                    v[k].y /= v[k].w;
+                    v[k].z /= v[k].w;
+                }
+            
+                //backface culling
+                if (passSettings.BackFaceCulling)
+                {
+                    Vector3 v0 = new Vector3(v[0].x, v[0].y, v[0].z);
+                    Vector3 v1 = new Vector3(v[1].x, v[1].y, v[1].z);
+                    Vector3 v2 = new Vector3(v[2].x, v[2].y, v[2].z);
+                    Vector3 e01 = v1 - v0;
+                    Vector3 e02 = v2 - v0;
+                    Vector3 cross = Vector3.Cross(e01, e02);
+                    if (cross.z < 0) {
+                        continue;
+                    }
+                }
+            
+                ++_trianglesRendered;
+            
+                // ------- Viewport Transform ----------
+                //NDC to screen space
+                for (int k = 0; k < 3; k++)
+                {
+                    var vec = v[k];
+                    vec.x = 0.5f * (_width - 1) * (vec.x + 1.0f);
+                    vec.y = 0.5f * (_height -1) * (vec.y + 1.0f);
+            
+                    //在硬件渲染中，NDC的z值经过硬件的透视除法之后就直接写入到depth buffer了，如果要调整需要在投影矩阵中调整
+                    //由于我们是软件渲染，所以可以在这里调整z值。                    
+            
+                    //GAMES101约定的NDC是右手坐标系，z值范围是[-1,1]，但n为1，f为-1，因此值越大越靠近n。                    
+                    //为了可视化Depth buffer，将最终的z值从[-1,1]映射到[0,1]的范围，因此最终n为1, f为0。离n越近，深度值越大。                    
+                    //由于远处的z值为0，因此clear时深度要清除为0，然后深度测试时，使用GREATER测试。
+                    //(当然我们也可以在这儿反转z值，然后clear时使用float.MaxValue清除，并且深度测试时使用LESS_EQUAL测试)
+                    //注意：这儿的z值调整并不是必要的，只是为了可视化时便于映射为颜色值。其实也可以在可视化的地方调整。
+                    //但是这么调整后，正好和Unity在DirectX平台的Reverse z一样，让near plane附近的z值的浮点数精度提高。
+                    vec.z = vec.z * 0.5f + 0.5f;
+
+                    v[k] = vec; 
+                }
+            
+                Triangle t = new Triangle();
+                t.Vertex0.Position = v[0];
+                t.Vertex1.Position = v[1];
+                t.Vertex2.Position = v[2];                
+            
+                //set obj normal
+                t.Vertex0.Normal = vsOutput[idx0].objectNormal;
+                t.Vertex1.Normal = vsOutput[idx1].objectNormal;
+                t.Vertex2.Normal = vsOutput[idx2].objectNormal;                
+            
+                if (ro.cpuData.MeshUVs.Length > 0)
+                {                    
+                    t.Vertex0.Texcoord = ro.cpuData.MeshUVs[idx0];
+                    t.Vertex1.Texcoord = ro.cpuData.MeshUVs[idx1];
+                    t.Vertex2.Texcoord = ro.cpuData.MeshUVs[idx2];                    
+                }
+            
+                //设置顶点色,使用config中的颜色数组循环设置                
+                t.Vertex0.Color = Color.white;
+                t.Vertex1.Color = Color.white;
+                t.Vertex2.Color = Color.white;
+            
+                //set world space pos & normal
+                t.Vertex0.WorldPos = vsOutput[idx0].worldPos;
+                t.Vertex1.WorldPos = vsOutput[idx1].worldPos;
+                t.Vertex2.WorldPos = vsOutput[idx2].worldPos;
+                t.Vertex0.WorldNormal = vsOutput[idx0].worldNormal;
+                t.Vertex1.WorldNormal = vsOutput[idx1].worldNormal;
+                t.Vertex2.WorldNormal = vsOutput[idx2].worldNormal;
+            
+                /// ---------- Rasterization -----------
+                RasterizeTriangle(t, ro);
+                
+            }
+            
+            Profiler.EndSample();
+            
+            Profiler.EndSample();
+            
+            // URUtils.FillArray(frame_buf,Color.blue);
+        }
 
 
         public void UpdateFrame()

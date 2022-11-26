@@ -13,6 +13,7 @@ namespace SoftOcclusionCulling
         void SetupUniforms(Camera camera, Light mainLight);
 
         void DrawObject(RenderingObject ro);
+        void OcclusionCulling(RenderingObject ro);
 
         Texture ColorTexture { get; }
         

@@ -180,6 +180,84 @@ namespace SoftOcclusionCulling
             Profiler.EndSample();
         }
         
+        public void OcclusionCulling(RenderingObject ro)
+        {
+            Profiler.BeginSample("JobRasterizer.OcclusionCulling");
+            if (ro.mesh == null || ro.jobData == null) {
+                Profiler.EndSample();
+                return;
+            }
+            Profiler.BeginSample("OcclusionCulling.CopyFrom");
+            _needMoveToCullingLayer.CopyFrom(temp_needMove_buf);
+            Profiler.EndSample();
+            
+            Profiler.BeginSample("OcclusionCulling.FrustumCulling");
+            Mesh mesh = ro.mesh;
+            
+            _matModel = ro.GetModelMatrix();                      
+            
+            Matrix4x4 mvp = _matProjection * _matView * _matModel;
+            if(_passSettings.FrustumCulling && URUtils.FrustumCulling(mesh.bounds, mvp)){                
+                ProfileManager.EndSample();
+                return;
+            }
+            Profiler.EndSample();
+
+            Vector4[] clipAABB = URUtils.GetClipAABB(mesh.bounds, mvp);
+            Vector4 minClip = clipAABB[0];
+            Vector4 maxClip = clipAABB[7];
+                        
+            minClip.z /= minClip.w;
+            maxClip.z /= maxClip.w;
+            
+            minClip.z = minClip.z * 0.5f + 0.5f;
+            maxClip.z = maxClip.z * 0.5f + 0.5f;
+            
+            Matrix4x4 normalMat = _matModel.inverse.transpose;
+            
+            _verticesAll += mesh.vertexCount;
+            _trianglesAll += ro.cpuData.MeshTriangles.Length / 3;
+            
+            NativeArray<VSOutBuf> vsOutResult = new NativeArray<VSOutBuf>(mesh.vertexCount, Allocator.TempJob);
+            
+            VertexShadingJob vsJob = new VertexShadingJob();            
+            vsJob.positionData = ro.jobData.positionData;
+            vsJob.mvpMat = mvp;
+            vsJob.result = vsOutResult;
+            JobHandle vsHandle = vsJob.Schedule(vsOutResult.Length, 1);                        
+            
+            TriangleCullingJob triJob = new TriangleCullingJob();
+            // triJob.positionData = ro.jobData.positionData;
+            // triJob.mvpMat = mvp;
+            triJob.trianglesData = ro.jobData.trianglesData;
+            triJob.uvData = ro.jobData.uvData;
+            triJob.vsOutput = vsOutResult;
+            triJob.frameBuffer = _frameBuffer;
+            triJob.depthBuffer = _depthBuffer;
+            triJob.screenWidth = _width;
+            triJob.screenHeight = _height;                                    
+            triJob.TextureData = ro.texture.GetPixelData<URColor24>(0);
+            triJob.TextureWidth = ro.texture.width;
+            triJob.TextureHeight = ro.texture.height;
+            triJob.UseBilinear = _passSettings.BilinearSample;
+            triJob.fsType = _passSettings.FragmentShaderType;
+            triJob.Uniforms = Uniforms;
+            triJob.NeedMoveToCullingLayer = _needMoveToCullingLayer;
+            triJob.maxClip = maxClip;
+            triJob.minClip = minClip;
+            JobHandle triHandle = triJob.Schedule(ro.jobData.trianglesData.Length, 2, vsHandle);
+            triHandle.Complete();
+            
+            Profiler.BeginSample("OcclusionCulling.GetLayerInfo");
+            if(_needMoveToCullingLayer[0] == false)
+                ro.NeedMoveToCullingLayer = false;
+            Profiler.EndSample();
+            
+            vsOutResult.Dispose();
+
+            Profiler.EndSample();
+        }
+        
         public void UpdateFrame()
         {
             Profiler.BeginSample("JobRasterizer.UpdateFrame");
