@@ -111,7 +111,7 @@ MonoBehaviour:
   m_Active: 1
   passSettings:
     renderPassEvent: 250
-    RasterizerType: 0
+    RasterizerType: 1
     CullingLayer:
       serializedVersion: 2
       m_Bits: 0
@@ -119,4 +119,4 @@ MonoBehaviour:
     FrustumCulling: 1
     BackFaceCulling: 1
     BilinearSample: 0
-    FragmentShaderType: 1
+    FragmentShaderType: 0

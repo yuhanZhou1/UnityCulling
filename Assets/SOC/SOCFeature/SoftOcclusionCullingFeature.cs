@@ -55,7 +55,6 @@ namespace SoftOcclusionCulling
         private SoftOcclusionCullingFeature.PassSettings passSettings;
         private Camera camera;
         private GameObject[] rootObjs;
-        // private GameObject scene;
         private List<RenderingObject> renderingObjects = new List<RenderingObject>();
 
         
@@ -79,13 +78,15 @@ namespace SoftOcclusionCulling
         {
             InitSetup(ref renderingData);
             _lastUseUnityNativeRendering = passSettings.RasterizerType;
-            OnOffUnityRendering();
+            // OnOffUnityRendering();
             // InitMeshInfo();
         }
 
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
         {
-
+            var scene = renderingData.cameraData.camera.gameObject.scene;
+            if (!scene.isLoaded) return;
+            
             CommandBuffer cmd = CommandBufferPool.Get("SoftRasterizerPass");
             if (passSettings.RasterizerType != RasterizerType.Native) {
                 Render();
@@ -149,10 +150,8 @@ namespace SoftOcclusionCulling
         void InitSetup(ref RenderingData renderingData)
         {
             var scene = renderingData.cameraData.camera.gameObject.scene;
-            if (!scene.isLoaded)
-            {
-                return;
-            }
+            if (!scene.isLoaded) return;
+            
             rootObjs = scene.GetRootGameObjects();
             camera = renderingData.cameraData.camera;
             renderingObjects.Clear();
@@ -170,9 +169,11 @@ namespace SoftOcclusionCulling
             if (rawImg != null)// && _cpuRasterizer == null)
             {
                 RectTransform rect = rawImg.GetComponent<RectTransform>();
-                rect.sizeDelta = new Vector2(Screen.width/8, Screen.height/8);
+                rect.sizeDelta = new Vector2(120, 67);
+                // rect.sizeDelta = new Vector2(Screen.width/8, Screen.height/8);
                 int w = Mathf.FloorToInt(rect.rect.width);
                 int h = Mathf.FloorToInt(rect.rect.height);
+                // Debug.Log($"screen size: {w}x{h}");
                 if(_cpuRasterizer == null && passSettings.RasterizerType == RasterizerType.CPU)
                     _cpuRasterizer = new CPURasterizer(w, h, passSettings);
                 if(_jobRasterizer == null && passSettings.RasterizerType == RasterizerType.CPUJobs)
@@ -185,6 +186,8 @@ namespace SoftOcclusionCulling
                 if(_jobRasterizer == null && passSettings.RasterizerType == RasterizerType.CPUJobs)
                     _jobRasterizer.StatDelegate += _statsPanel.StatDelegate;
             }
+
+            OnOffUnityRendering();
         }
         
         void InitMeshInfo()
@@ -222,12 +225,12 @@ namespace SoftOcclusionCulling
         void OnOffUnityRendering()
         {
             if(passSettings.RasterizerType == RasterizerType.Native){
-                rawImg.gameObject.SetActive(false);
+                if (rawImg != null) rawImg.gameObject.SetActive(false);
                 camera.cullingMask = 0xfffffff; // 除了Culling layer
                 _statsPanel.SetRasterizerType("Unity Native");
             }
             else{
-                rawImg.gameObject.SetActive(true);
+                if (rawImg != null) rawImg.gameObject.SetActive(true);
                 camera.cullingMask = ~(1 << 6); // 0
                 if(_rasterizer!=null){
                     _statsPanel.SetRasterizerType(_rasterizer.Name);
