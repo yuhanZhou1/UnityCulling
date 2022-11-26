@@ -146,10 +146,7 @@ namespace SoftOcclusionCulling
             
             VertexShadingJob vsJob = new VertexShadingJob();            
             vsJob.positionData = ro.jobData.positionData;
-            vsJob.normalData = ro.jobData.normalData;
             vsJob.mvpMat = mvp;
-            vsJob.modelMat = _matModel;
-            vsJob.normalMat = normalMat;
             vsJob.result = vsOutResult;
             JobHandle vsHandle = vsJob.Schedule(vsOutResult.Length, 1);                        
             

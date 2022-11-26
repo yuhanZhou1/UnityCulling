@@ -254,7 +254,7 @@ namespace SoftOcclusionCulling
                     }
                 }
             }
-            _rasterizer.UpdateFrame();
+            // _rasterizer.UpdateFrame();
             
         }
     }

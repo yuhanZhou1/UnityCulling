@@ -70,7 +70,7 @@ namespace SoftOcclusionCulling
             v2.y /= v2.w;
             v2.z /= v2.w;
 
-            //backface culling                
+            //backface culling
             {
                 Vector3 t0 = new Vector3(v0.x, v0.y, v0.z);
                 Vector3 t1 = new Vector3(v1.x, v1.y, v1.z);
@@ -108,26 +108,26 @@ namespace SoftOcclusionCulling
             t.Vertex2.Position = v2;                
 
             //set obj normal
-            t.Vertex0.Normal = vsOutput[idx0].objectNormal;
-            t.Vertex1.Normal = vsOutput[idx1].objectNormal;
-            t.Vertex2.Normal = vsOutput[idx2].objectNormal;                
+            // t.Vertex0.Normal = vsOutput[idx0].objectNormal;
+            // t.Vertex1.Normal = vsOutput[idx1].objectNormal;
+            // t.Vertex2.Normal = vsOutput[idx2].objectNormal;                
                                 
-            t.Vertex0.Texcoord = uvData[idx0];
-            t.Vertex1.Texcoord = uvData[idx1];
-            t.Vertex2.Texcoord = uvData[idx2];                    
-                                            
-            t.Vertex0.Color = Color.white;
-            t.Vertex1.Color = Color.white;
-            t.Vertex2.Color = Color.white;
+            // t.Vertex0.Texcoord = uvData[idx0];
+            // t.Vertex1.Texcoord = uvData[idx1];
+            // t.Vertex2.Texcoord = uvData[idx2];                    
+            //                                 
+            // t.Vertex0.Color = Color.white;
+            // t.Vertex1.Color = Color.white;
+            // t.Vertex2.Color = Color.white;
             
 
             //set world space pos & normal
-            t.Vertex0.WorldPos = vsOutput[idx0].worldPos;
-            t.Vertex1.WorldPos = vsOutput[idx1].worldPos;
-            t.Vertex2.WorldPos = vsOutput[idx2].worldPos;
-            t.Vertex0.WorldNormal = vsOutput[idx0].worldNormal;
-            t.Vertex1.WorldNormal = vsOutput[idx1].worldNormal;
-            t.Vertex2.WorldNormal = vsOutput[idx2].worldNormal;
+            // t.Vertex0.WorldPos = vsOutput[idx0].worldPos;
+            // t.Vertex1.WorldPos = vsOutput[idx1].worldPos;
+            // t.Vertex2.WorldPos = vsOutput[idx2].worldPos;
+            // t.Vertex0.WorldNormal = vsOutput[idx0].worldNormal;
+            // t.Vertex1.WorldNormal = vsOutput[idx1].worldNormal;
+            // t.Vertex2.WorldNormal = vsOutput[idx2].worldNormal;
 
             RasterizeTriangle(t);
             
