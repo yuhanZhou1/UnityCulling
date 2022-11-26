@@ -16,7 +16,7 @@ namespace SoftOcclusionCulling
         Matrix4x4 _matView;
         Matrix4x4 _matProjection;
 
-        NativeArray<Color> _frameBuffer;        
+        NativeArray<Color> _frameBuffer;
         NativeArray<float> _depthBuffer;
         NativeArray<bool> _needMoveToCullingLayer;
 
@@ -24,7 +24,7 @@ namespace SoftOcclusionCulling
         float[] temp_depth_buf;
         bool[] temp_needMove_buf;
 
-        public Texture2D texture;        
+        public Texture2D texture;
 
         //Stats
         int _trianglesAll, _trianglesRendered;
@@ -58,11 +58,11 @@ namespace SoftOcclusionCulling
 
             _frameBuffer = new NativeArray<Color>(bufSize, Allocator.Persistent);
             _depthBuffer = new NativeArray<float>(bufSize, Allocator.Persistent);
-            _needMoveToCullingLayer = new NativeArray<bool>(bufSize, Allocator.Persistent);
+            _needMoveToCullingLayer = new NativeArray<bool>(1, Allocator.Persistent);
 
             temp_buf = new Color[bufSize];
             temp_depth_buf = new float[bufSize];
-            temp_needMove_buf = new bool[bufSize];
+            temp_needMove_buf = new bool[1];
             URUtils.FillArray<float>(temp_depth_buf,0);
             URUtils.FillArray<bool>(temp_needMove_buf,true);
         }
@@ -111,7 +111,11 @@ namespace SoftOcclusionCulling
                 Profiler.EndSample();
                 return;
             }
+            Profiler.BeginSample("DrawObject.CopyFrom");
             _needMoveToCullingLayer.CopyFrom(temp_needMove_buf);
+            Profiler.EndSample();
+            
+            Profiler.BeginSample("DrawObject.FrustumCulling");
             Mesh mesh = ro.mesh;
             
             _matModel = ro.GetModelMatrix();                      
@@ -121,6 +125,17 @@ namespace SoftOcclusionCulling
                 ProfileManager.EndSample();
                 return;
             }
+            Profiler.EndSample();
+
+            Vector4[] clipAABB = URUtils.GetClipAABB(mesh.bounds, mvp);
+            Vector4 minClip = clipAABB[0];
+            Vector4 maxClip = clipAABB[7];
+                        
+            minClip.z /= minClip.w;
+            maxClip.z /= maxClip.w;
+            
+            minClip.z = minClip.z * 0.5f + 0.5f;
+            maxClip.z = maxClip.z * 0.5f + 0.5f;
             
             Matrix4x4 normalMat = _matModel.inverse.transpose;
             
@@ -153,20 +168,18 @@ namespace SoftOcclusionCulling
             triJob.fsType = _passSettings.FragmentShaderType;
             triJob.Uniforms = Uniforms;
             triJob.NeedMoveToCullingLayer = _needMoveToCullingLayer;
+            triJob.maxClip = maxClip;
+            triJob.minClip = minClip;
             JobHandle triHandle = triJob.Schedule(ro.jobData.trianglesData.Length, 2, vsHandle);
             triHandle.Complete();
             
-            foreach (var var in _needMoveToCullingLayer)
-            {
-                if (var == false)
-                {
-                    ro.NeedMoveToCullingLayer = false;
-                    break;
-                }
-            }
+            Profiler.BeginSample("DrawObject.GetLayerInfo");
+            if(_needMoveToCullingLayer[0] == false)
+                ro.NeedMoveToCullingLayer = false;
+            Profiler.EndSample();
             
             vsOutResult.Dispose();
-            
+
             Profiler.EndSample();
         }
         

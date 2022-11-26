@@ -43,6 +43,10 @@ namespace SoftOcclusionCulling
         Vector4[] _tmpVector4s = new Vector4[3];        
         Vector3[] _tmpVector3s = new Vector3[3];
         
+        // Object最大最小深度
+        private Vector4 minClip;
+        private Vector4 maxClip;
+        
         public float Aspect {
             get { return (float)_width / _height; }
         }
@@ -112,6 +116,16 @@ namespace SoftOcclusionCulling
                 return;
             }
             
+            Vector4[] clipAABB = URUtils.GetClipAABB(mesh.bounds, mvp);
+            minClip = clipAABB[0];
+            maxClip = clipAABB[7];
+            
+            minClip.z /= minClip.w;
+            maxClip.z /= maxClip.w;
+            
+            minClip.z = minClip.z * 0.5f + 0.5f;
+            maxClip.z = maxClip.z * 0.5f + 0.5f;
+            
             Matrix4x4 normalMat = _matModel.inverse.transpose;
 
             _verticesAll += mesh.vertexCount;
@@ -167,7 +181,7 @@ namespace SoftOcclusionCulling
                 {
                     v[k].x /= v[k].w;
                     v[k].y /= v[k].w;
-                    v[k].z /= v[k].w;                  
+                    v[k].z /= v[k].w;
                 }
             
                 //backface culling
@@ -203,8 +217,8 @@ namespace SoftOcclusionCulling
                     //(当然我们也可以在这儿反转z值，然后clear时使用float.MaxValue清除，并且深度测试时使用LESS_EQUAL测试)
                     //注意：这儿的z值调整并不是必要的，只是为了可视化时便于映射为颜色值。其实也可以在可视化的地方调整。
                     //但是这么调整后，正好和Unity在DirectX平台的Reverse z一样，让near plane附近的z值的浮点数精度提高。
-                    vec.z = vec.z * 0.5f + 0.5f; 
-            
+                    vec.z = vec.z * 0.5f + 0.5f;
+
                     v[k] = vec; 
                 }
             
@@ -420,64 +434,73 @@ namespace SoftOcclusionCulling
                 {
                     //if(IsInsideTriangle(x, y, t)) //-->检测是否在三角形内比使用重心坐标检测要慢，因此先计算重心坐标，再检查3个坐标是否有小于0
                     {
-                        //计算重心坐标
-                        var c = ComputeBarycentric2D(x, y, t);
-                        float alpha = c.x;
-                        float beta = c.y;
-                        float gamma = c.z;
-                        if(alpha < 0 || beta < 0 || gamma < 0){                                
-                            continue;
-                        }
-                        //透视校正插值，z为透视校正插值后的view space z值
-                        float z = 1.0f / (alpha / v[0].w + beta / v[1].w + gamma / v[2].w);
-                        //zp为透视校正插值后的screen space z值
-                        float zp = (alpha * v[0].z / v[0].w + beta * v[1].z / v[1].w + gamma * v[2].z / v[2].w) * z;
-                        
-                        //深度测试(注意我们这儿的z值越大越靠近near plane，因此大值通过测试）
                         int index = GetIndex(x, y);
-                        if(zp >= depth_buf[index])
+                        frame_buf[index] = Color.white;
+                        if (minClip.z >= depth_buf[index])
                         {
+                            depth_buf[index] = minClip.z;
                             ro.NeedMoveToCullingLayer = false;
-                            depth_buf[index] = zp;
-
-                            if (passSettings.FragmentShaderType == ShaderType.OnlyDepth) 
-                                continue;
-                            
-                            //透视校正插值
-                            Profiler.BeginSample("CPURasterizer.AttributeInterpolation");
-                            Color color_p = (alpha * t.Vertex0.Color / v[0].w + beta * t.Vertex1.Color / v[1].w + gamma * t.Vertex2.Color / v[2].w) * z;
-                            Vector2 uv_p = (alpha * t.Vertex0.Texcoord / v[0].w + beta * t.Vertex1.Texcoord / v[1].w + gamma * t.Vertex2.Texcoord / v[2].w) * z;
-                            Vector3 normal_p = (alpha * t.Vertex0.Normal / v[0].w + beta * t.Vertex1.Normal  / v[1].w + gamma * t.Vertex2.Normal  / v[2].w) * z;
-                            Vector3 worldPos_p = (alpha * t.Vertex0.WorldPos / v[0].w + beta * t.Vertex1.WorldPos / v[1].w + gamma * t.Vertex2.WorldPos / v[2].w) * z;
-                            Vector3 worldNormal_p = (alpha * t.Vertex0.WorldNormal / v[0].w + beta * t.Vertex1.WorldNormal / v[1].w + gamma * t.Vertex2.WorldNormal / v[2].w) * z;
-                            Profiler.EndSample();
-                            
-                            FragmentShaderInputData input = new FragmentShaderInputData();
-                            input.Color = color_p;
-                            input.UV = uv_p;
-                            input.TextureData = ro.texture.GetPixelData<URColor24>(0);
-                            input.TextureWidth = ro.texture.width;
-                            input.TextureHeight = ro.texture.height;
-                            input.UseBilinear = passSettings.BilinearSample;
-                            input.LocalNormal = normal_p;
-                            input.WorldPos = worldPos_p;
-                            input.WorldNormal = worldNormal_p;
-
-                            Profiler.BeginSample("CPURasterizer.FragmentShader");
-                            switch(passSettings.FragmentShaderType){
-                                case ShaderType.BlinnPhong:
-                                    frame_buf[index] = ShaderContext.FSBlinnPhong(input, Uniforms);
-                                    break;
-                                case ShaderType.NormalVisual:
-                                    frame_buf[index] = ShaderContext.FSNormalVisual(input);
-                                    break;
-                                case ShaderType.VertexColor:
-                                    frame_buf[index] = ShaderContext.FSVertexColor(input);
-                                    break;
-                            }
-                            
-                            Profiler.EndSample();                                                                                                
                         }
+                        
+
+                        // //计算重心坐标
+                        // var c = ComputeBarycentric2D(x, y, t);
+                        // float alpha = c.x;
+                        // float beta = c.y;
+                        // float gamma = c.z;
+                        // if(alpha < 0 || beta < 0 || gamma < 0){                                
+                        //     continue;
+                        // }
+                        // //透视校正插值，z为透视校正插值后的view space z值
+                        // float z = 1.0f / (alpha / v[0].w + beta / v[1].w + gamma / v[2].w);
+                        // //zp为透视校正插值后的screen space z值
+                        // float zp = (alpha * v[0].z / v[0].w + beta * v[1].z / v[1].w + gamma * v[2].z / v[2].w) * z;
+                        //
+                        // //深度测试(注意我们这儿的z值越大越靠近near plane，因此大值通过测试）
+                        // // int index = GetIndex(x, y);
+                        // if(zp >= depth_buf[index])
+                        // {
+                        //     ro.NeedMoveToCullingLayer = false;
+                        //     depth_buf[index] = zp;
+                        //
+                        //     // if (passSettings.FragmentShaderType == ShaderType.OnlyDepth) 
+                        //     //     continue;
+                        //     
+                        //     //透视校正插值
+                        //     Profiler.BeginSample("CPURasterizer.AttributeInterpolation");
+                        //     Color color_p = (alpha * t.Vertex0.Color / v[0].w + beta * t.Vertex1.Color / v[1].w + gamma * t.Vertex2.Color / v[2].w) * z;
+                        //     Vector2 uv_p = (alpha * t.Vertex0.Texcoord / v[0].w + beta * t.Vertex1.Texcoord / v[1].w + gamma * t.Vertex2.Texcoord / v[2].w) * z;
+                        //     Vector3 normal_p = (alpha * t.Vertex0.Normal / v[0].w + beta * t.Vertex1.Normal  / v[1].w + gamma * t.Vertex2.Normal  / v[2].w) * z;
+                        //     Vector3 worldPos_p = (alpha * t.Vertex0.WorldPos / v[0].w + beta * t.Vertex1.WorldPos / v[1].w + gamma * t.Vertex2.WorldPos / v[2].w) * z;
+                        //     Vector3 worldNormal_p = (alpha * t.Vertex0.WorldNormal / v[0].w + beta * t.Vertex1.WorldNormal / v[1].w + gamma * t.Vertex2.WorldNormal / v[2].w) * z;
+                        //     Profiler.EndSample();
+                        //     
+                        //     FragmentShaderInputData input = new FragmentShaderInputData();
+                        //     input.Color = color_p;
+                        //     input.UV = uv_p;
+                        //     input.TextureData = ro.texture.GetPixelData<URColor24>(0);
+                        //     input.TextureWidth = ro.texture.width;
+                        //     input.TextureHeight = ro.texture.height;
+                        //     input.UseBilinear = passSettings.BilinearSample;
+                        //     input.LocalNormal = normal_p;
+                        //     input.WorldPos = worldPos_p;
+                        //     input.WorldNormal = worldNormal_p;
+                        //
+                        //     Profiler.BeginSample("CPURasterizer.FragmentShader");
+                        //     switch(passSettings.FragmentShaderType){
+                        //         case ShaderType.BlinnPhong:
+                        //             frame_buf[index] = ShaderContext.FSBlinnPhong(input, Uniforms);
+                        //             break;
+                        //         case ShaderType.NormalVisual:
+                        //             frame_buf[index] = ShaderContext.FSNormalVisual(input);
+                        //             break;
+                        //         case ShaderType.VertexColor:
+                        //             frame_buf[index] = ShaderContext.FSVertexColor(input);
+                        //             break;
+                        //     }
+                        //     
+                        //     Profiler.EndSample();                                                                                                
+                        // }
                     }                        
                 }
             }

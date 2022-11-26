@@ -24,6 +24,8 @@ namespace SoftOcclusionCulling
         // 判断遮挡
         [NativeDisableParallelForRestriction]
         public NativeArray<bool> NeedMoveToCullingLayer;
+        public Vector4 minClip;
+        public Vector4 maxClip;
 
         public int screenWidth;
         public int screenHeight; 
@@ -48,8 +50,8 @@ namespace SoftOcclusionCulling
 
             var v0 = vsOutput[idx0].clipPos;
             var v1 = vsOutput[idx1].clipPos;
-            var v2 = vsOutput[idx2].clipPos;                                  
-                
+            var v2 = vsOutput[idx2].clipPos;
+            
             // ------ Clipping -------
             if (Clipped(v0, v1, v2))
             {
@@ -66,7 +68,7 @@ namespace SoftOcclusionCulling
             v1.z /= v1.w;
             v2.x /= v2.w;
             v2.y /= v2.w;
-            v2.z /= v2.w;                                            
+            v2.z /= v2.w;
 
             //backface culling                
             {
@@ -97,7 +99,7 @@ namespace SoftOcclusionCulling
 
                 v2.x = 0.5f * max_w * (v2.x + 1.0f);
                 v2.y = 0.5f * max_h * (v2.y + 1.0f);                
-                v2.z = v2.z * 0.5f + 0.5f; 
+                v2.z = v2.z * 0.5f + 0.5f;
             }
 
             Triangle t = new Triangle();
@@ -213,60 +215,65 @@ namespace SoftOcclusionCulling
             for (int y = minPY; y < maxPY; ++y)
             {
                 for(int x = minPX; x < maxPX; ++x)
-                {                                        
-                    //计算重心坐标
-                    var c = ComputeBarycentric2D(x, y, t);
-                    float alpha = c.x;
-                    float beta = c.y;
-                    float gamma = c.z;
-                    if(alpha < tolerant || beta < tolerant || gamma < tolerant)
-                    {                                
-                        continue;
-                    }
-                    //透视校正插值，z为透视校正插值后的view space z值
-                    float z = 1.0f / (alpha / v0.w + beta / v1.w + gamma / v2.w);
-                    //zp为透视校正插值后的screen space z值
-                    float zp = (alpha * v0.z / v0.w + beta * v1.z / v1.w + gamma * v2.z / v2.w) * z;
-                    
+                {
                     //深度测试(注意我们这儿的z值越大越靠近near plane，因此大值通过测试）
                     int index = GetIndex(x, y);
-                    // NeedMoveToCullingLayer[index] = true;
-                    if(zp >= depthBuffer[index])
+                    frameBuffer[index] = Color.white;
+                    if (minClip.z >= depthBuffer[index])
                     {
-                        NeedMoveToCullingLayer[index] = false;
-                        depthBuffer[index] = zp;
-                        
-                        //透视校正插值                            
-                        Color color_p = (alpha * t.Vertex0.Color / v0.w + beta * t.Vertex1.Color / v1.w + gamma * t.Vertex2.Color / v2.w) * z;
-                        Vector2 uv_p = (alpha * t.Vertex0.Texcoord / v0.w + beta * t.Vertex1.Texcoord / v1.w + gamma * t.Vertex2.Texcoord / v2.w) * z;
-                        Vector3 normal_p = (alpha * t.Vertex0.Normal / v0.w + beta * t.Vertex1.Normal  / v1.w + gamma * t.Vertex2.Normal  / v2.w) * z;
-                        Vector3 worldPos_p = (alpha * t.Vertex0.WorldPos / v0.w + beta * t.Vertex1.WorldPos / v1.w + gamma * t.Vertex2.WorldPos / v2.w) * z;
-                        Vector3 worldNormal_p = (alpha * t.Vertex0.WorldNormal / v0.w + beta * t.Vertex1.WorldNormal / v1.w + gamma * t.Vertex2.WorldNormal / v2.w) * z;                            
-                        
-                        FragmentShaderInputData input = new FragmentShaderInputData();
-                        input.Color = color_p;
-                        input.UV = uv_p;
-                        input.TextureData = TextureData;
-                        input.TextureWidth = TextureWidth;
-                        input.TextureHeight = TextureHeight;
-                        input.UseBilinear = UseBilinear;
-                        input.LocalNormal = normal_p;
-                        input.WorldPos = worldPos_p;
-                        input.WorldNormal = worldNormal_p;
-
-                        switch(fsType){
-                            case ShaderType.BlinnPhong:
-                                frameBuffer[index] = ShaderContext.FSBlinnPhong(input, Uniforms);
-                                break;
-                            case ShaderType.NormalVisual:
-                                frameBuffer[index] = ShaderContext.FSNormalVisual(input);
-                                break;
-                            case ShaderType.VertexColor:
-                                frameBuffer[index] = ShaderContext.FSVertexColor(input);
-                                break;
-                        }                                                                                             
-                        
-                    }                                            
+                        depthBuffer[index] = minClip.z;
+                        NeedMoveToCullingLayer[0] = false;
+                    }
+                    // //计算重心坐标
+                    // var c = ComputeBarycentric2D(x, y, t);
+                    // float alpha = c.x;
+                    // float beta = c.y;
+                    // float gamma = c.z;
+                    // if(alpha < tolerant || beta < tolerant || gamma < tolerant)
+                    // {                                
+                    //     continue;
+                    // }
+                    // //透视校正插值，z为透视校正插值后的view space z值
+                    // float z = 1.0f / (alpha / v0.w + beta / v1.w + gamma / v2.w);
+                    // //zp为透视校正插值后的screen space z值
+                    // float zp = (alpha * v0.z / v0.w + beta * v1.z / v1.w + gamma * v2.z / v2.w) * z;
+                    //
+                    // if(zp >= depthBuffer[index])
+                    // {
+                    //     NeedMoveToCullingLayer[index] = false;
+                    //     depthBuffer[index] = zp;
+                    //     
+                    //     //透视校正插值                            
+                    //     Color color_p = (alpha * t.Vertex0.Color / v0.w + beta * t.Vertex1.Color / v1.w + gamma * t.Vertex2.Color / v2.w) * z;
+                    //     Vector2 uv_p = (alpha * t.Vertex0.Texcoord / v0.w + beta * t.Vertex1.Texcoord / v1.w + gamma * t.Vertex2.Texcoord / v2.w) * z;
+                    //     Vector3 normal_p = (alpha * t.Vertex0.Normal / v0.w + beta * t.Vertex1.Normal  / v1.w + gamma * t.Vertex2.Normal  / v2.w) * z;
+                    //     Vector3 worldPos_p = (alpha * t.Vertex0.WorldPos / v0.w + beta * t.Vertex1.WorldPos / v1.w + gamma * t.Vertex2.WorldPos / v2.w) * z;
+                    //     Vector3 worldNormal_p = (alpha * t.Vertex0.WorldNormal / v0.w + beta * t.Vertex1.WorldNormal / v1.w + gamma * t.Vertex2.WorldNormal / v2.w) * z;                            
+                    //     
+                    //     FragmentShaderInputData input = new FragmentShaderInputData();
+                    //     input.Color = color_p;
+                    //     input.UV = uv_p;
+                    //     input.TextureData = TextureData;
+                    //     input.TextureWidth = TextureWidth;
+                    //     input.TextureHeight = TextureHeight;
+                    //     input.UseBilinear = UseBilinear;
+                    //     input.LocalNormal = normal_p;
+                    //     input.WorldPos = worldPos_p;
+                    //     input.WorldNormal = worldNormal_p;
+                    //
+                    //     switch(fsType){
+                    //         case ShaderType.BlinnPhong:
+                    //             frameBuffer[index] = ShaderContext.FSBlinnPhong(input, Uniforms);
+                    //             break;
+                    //         case ShaderType.NormalVisual:
+                    //             frameBuffer[index] = ShaderContext.FSNormalVisual(input);
+                    //             break;
+                    //         case ShaderType.VertexColor:
+                    //             frameBuffer[index] = ShaderContext.FSVertexColor(input);
+                    //             break;
+                    //     }                                                                                             
+                    //     
+                    // }                                            
                 }
             }                                    
         }

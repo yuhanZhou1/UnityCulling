@@ -125,6 +125,23 @@ namespace SoftOcclusionCulling
             
             return CheckVerticesOutFrustumClipSpace(v);
         }
+
+        public static Vector4[] GetClipAABB(Bounds localAABB, Matrix4x4 mvp)
+        {
+            var v = s_tmp8Vector4s;
+            var min = localAABB.min; min.z = -min.z;
+            var max = localAABB.max; max.z = -max.z;
+            v[0] = mvp * new Vector4(min.x, min.y, min.z, 1.0f);
+            v[1] = mvp * new Vector4(min.x, min.y, max.z, 1.0f);
+            v[2] = mvp * new Vector4(min.x, max.y, min.z, 1.0f);
+            v[3] = mvp * new Vector4(min.x, max.y, max.z, 1.0f);
+            v[4] = mvp * new Vector4(max.x, min.y, min.z, 1.0f);
+            v[5] = mvp * new Vector4(max.x, min.y, max.z, 1.0f);
+            v[6] = mvp * new Vector4(max.x, max.y, min.z, 1.0f);
+            v[7] = mvp * new Vector4(max.x, max.y, max.z, 1.0f);
+            
+            return v;
+        }
     }
 }
 

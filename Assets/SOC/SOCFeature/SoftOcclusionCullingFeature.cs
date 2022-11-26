@@ -127,7 +127,7 @@ namespace SoftOcclusionCulling
             }
 
             if (_rasterizer != _lastRasterizer) {
-                Debug.Log($"Change Rasterizer to {_rasterizer.Name}");
+                // Debug.Log($"Change Rasterizer to {_rasterizer.Name}");
                 _lastRasterizer = _rasterizer;
                 
                 rawImg.texture = _rasterizer.ColorTexture;
