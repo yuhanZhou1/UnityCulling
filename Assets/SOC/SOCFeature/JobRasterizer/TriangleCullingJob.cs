@@ -24,6 +24,7 @@ namespace SoftOcclusionCulling
         // 判断遮挡
         [NativeDisableParallelForRestriction]
         public NativeArray<bool> NeedMoveToCullingLayer;
+        public NativeArray<Vector4> clipAABB;
         public Vector4 minClip;
         public Vector4 maxClip;
 
@@ -46,72 +47,41 @@ namespace SoftOcclusionCulling
 
         public void Execute(int index)
         {
-            // if(NeedMoveToCullingLayer[0] = false) return;
-            // var vert = positionData[index];
-            // var objVert = new Vector4(vert.x, vert.y, -vert.z, 1);
-            // output.clipPos = mvpMat * objVert;
-            
-            Vector3Int triangle = trianglesData[index];
-            int idx0 = triangle.x;
-            int idx1 = triangle.y;
-            int idx2 = triangle.z;
 
-            var v0 = vsOutput[idx0].clipPos;
-            var v1 = vsOutput[idx1].clipPos;
-            var v2 = vsOutput[idx2].clipPos;
+            var pos = clipAABB[index];
 
-            // var vert = positionData[idx0];
-            // var objVert = new Vector4(vert.x, vert.y, -vert.z, 1);
-            // var v0 = mvpMat * objVert;
-            //
-            // vert = positionData[idx1];
-            // objVert = new Vector4(vert.x, vert.y, -vert.z, 1);
-            // var v1 = mvpMat * objVert;
-            //
-            // vert = positionData[idx2];
-            // objVert = new Vector4(vert.x, vert.y, -vert.z, 1);
-            // var v2 = mvpMat * objVert;
-            
             // ------ Clipping -------
-            if (Clipped(v0, v1, v2))
+            if (Clipped(pos))
             {
                 return;
             }                
 
             // ------- Perspective division --------
             //clip space to NDC
-            v0.x /= v0.w;
-            v0.y /= v0.w;
-            v0.z /= v0.w;
-            v1.x /= v1.w;
-            v1.y /= v1.w;
-            v1.z /= v1.w;
-            v2.x /= v2.w;
-            v2.y /= v2.w;
-            v2.z /= v2.w;
+            pos.x /= pos.w; pos.y /= pos.w; pos.z /= pos.w;
 
             //backface culling
-            {
-                Vector3 t0 = new Vector3(v0.x, v0.y, v0.z);
-                Vector3 t1 = new Vector3(v1.x, v1.y, v1.z);
-                Vector3 t2 = new Vector3(v2.x, v2.y, v2.z);
-                Vector3 e01 = t1 - t0;
-                Vector3 e02 = t2 - t0;
-                Vector3 cross = Vector3.Cross(e01, e02);
-                if (cross.z < 0)
-                {
-                    return;
-                }
-            }
+            // {
+            //     Vector3 t0 = new Vector3(pos0.x, pos0.y, pos0.z);
+            //     Vector3 t1 = new Vector3(pos2.x, pos2.y, pos2.z);
+            //     Vector3 t2 = new Vector3(pos6.x, pos6.y, pos6.z);
+            //     Vector3 e01 = t1 - t0;
+            //     Vector3 e02 = t2 - t0;
+            //     Vector3 cross = Vector3.Cross(e01, e02);
+            //     if (cross.z < 0)
+            //     {
+            //         return;
+            //     }
+            // }
 
             // ------- Viewport Transform ----------
             //NDC to screen space            
             {
                 int max_w = screenWidth - 1;
                 int max_h = screenHeight - 1;
-                v0.x = 0.5f * max_w * (v0.x + 1.0f);
-                v0.y = 0.5f * max_h * (v0.y + 1.0f);                
-                v0.z = v0.z * 0.5f + 0.5f; 
+                pos.x = 0.5f * max_w * (pos.x + 1.0f);
+                pos.y = 0.5f * max_h * (pos.y + 1.0f);                
+                pos.z = pos.z * 0.5f + 0.5f; 
 
                 // v1.x = 0.5f * max_w * (v1.x + 1.0f);
                 // v1.y = 0.5f * max_h * (v1.y + 1.0f);                
@@ -123,7 +93,7 @@ namespace SoftOcclusionCulling
             }
 
             Triangle t = new Triangle();
-            t.Vertex0.Position = v0;
+            t.Vertex0.Position = pos;
             // t.Vertex1.Position = v1;
             // t.Vertex2.Position = v2;
 
@@ -167,6 +137,40 @@ namespace SoftOcclusionCulling
             return false;       
         }
         
+        bool Clipped(Vector4 v0)
+        {            
+            //分别检查视锥体的六个面，如果顶点在某个面之外，则该顶点在视锥外，剔除  
+            //由于NDC中总是满足-1<=Zndc<=1, 而当 w < 0 时，-w >= Zclip = Zndc*w >= w。所以此时clip space的坐标范围是[w,-w], 为了比较时更明确，将w取正      
+            
+            var w0 = v0.w >=0 ? v0.w : -v0.w;
+            
+            //left
+            if(v0.x < -w0 ){
+                return true;
+            }
+            //right
+            if(v0.x > w0){
+                return true;
+            }
+            //bottom
+            if(v0.y < -w0 ){
+                return true;
+            }
+            //top
+            if(v0.y > w0){
+                return true;
+            }
+            //near
+            if(v0.z < -w0 ){
+                return true;
+            }
+            //far
+            if(v0.z > w0){
+                return true;
+            }
+            return false;       
+        }
+        
         Vector3 ComputeBarycentric2D(float x, float y, Triangle t)
         {                      
             var v0 = t.Vertex0.Position;
@@ -196,7 +200,7 @@ namespace SoftOcclusionCulling
             v0x = v0x > screenWidth ? screenWidth : v0x;
             int v0y = Mathf.CeilToInt(v0.y);
             v0y = v0y < 0 ? 0 : v0y;
-            v0y = v0y > screenWidth ? screenWidth : v0y;
+            v0y = v0y > screenHeight ? screenHeight : v0y;
             
             int index = GetIndex(v0x, v0y);
             frameBuffer[index] = Color.white;

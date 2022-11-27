@@ -221,7 +221,7 @@ namespace SoftOcclusionCulling
                     frameBuffer[index] = Color.white;
                     if (minClip.z >= depthBuffer[index])
                     {
-                        depthBuffer[index] = minClip.z;
+                        depthBuffer[index] = maxClip.z;
                         NeedMoveToCullingLayer[0] = false;
                     }
                     // //计算重心坐标

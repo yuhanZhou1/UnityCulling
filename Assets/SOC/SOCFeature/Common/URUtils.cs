@@ -142,6 +142,43 @@ namespace SoftOcclusionCulling
             
             return v;
         }
+        
+        public static bool Clipped(Vector4 v0, Vector4 v1, Vector4 v2)
+        {            
+            //分别检查视锥体的六个面，如果三角形所有三个顶点都在某个面之外，则该三角形在视锥外，剔除  
+            //由于NDC中总是满足-1<=Zndc<=1, 而当 w < 0 时，-w >= Zclip = Zndc*w >= w。所以此时clip space的坐标范围是[w,-w], 为了比较时更明确，将w取正      
+            
+            var w0 = v0.w >=0 ? v0.w : -v0.w;            
+            var w1 = v1.w >=0 ? v1.w : -v1.w;            
+            var w2 = v2.w >=0 ? v2.w : -v2.w;
+            
+            //left
+            if(v0.x < -w0 && v1.x < -w1 && v2.x < -w2){
+                return true;
+            }
+            //right
+            if(v0.x > w0 && v1.x > w1 && v2.x > w2){
+                return true;
+            }
+            //bottom
+            if(v0.y < -w0 && v1.y < -w1 && v2.y < -w2){
+                return true;
+            }
+            //top
+            if(v0.y > w0 && v1.y > w1 && v2.y > w2){
+                return true;
+            }
+            //near
+            if(v0.z < -w0 && v1.z < -w1 && v2.z < -w2){
+                return true;
+            }
+            //far
+            if(v0.z > w0 && v1.z > w1 && v2.z > w2){
+                return true;
+            }
+            return false;       
+        }
+
     }
 }
 
