@@ -36,15 +36,20 @@ namespace SoftOcclusionCulling
 
         ~JobRenderObjectData()
         {
-            Release();
+            if(positionData.IsCreated) positionData.Dispose();  
+            if(normalData.IsCreated) normalData.Dispose();
+            if(uvData.IsCreated) uvData.Dispose();
+            if(trianglesData.IsCreated) trianglesData.Dispose(); 
+            Debug.Log("~JobRenderObjectData.Release");
         }
         
         public void Release()
         {
-            positionData.Dispose();  
-            normalData.Dispose();
-            uvData.Dispose();
-            trianglesData.Dispose();          
+            if(positionData.IsCreated) positionData.Dispose();  
+            if(normalData.IsCreated) normalData.Dispose();
+            if(uvData.IsCreated) uvData.Dispose();
+            if(trianglesData.IsCreated) trianglesData.Dispose();   
+            Debug.Log("JobRenderObjectData.Release");
         }
 
     }

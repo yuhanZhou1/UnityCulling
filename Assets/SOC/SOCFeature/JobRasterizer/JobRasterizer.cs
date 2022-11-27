@@ -55,7 +55,11 @@ namespace SoftOcclusionCulling
             texture.filterMode = FilterMode.Point;
 
             int bufSize = w * h;
-
+            
+            if(_frameBuffer.IsCreated) _frameBuffer.Dispose();
+            if(_depthBuffer.IsCreated) _depthBuffer.Dispose();
+            if(_needMoveToCullingLayer.IsCreated) _needMoveToCullingLayer.Dispose();
+            
             _frameBuffer = new NativeArray<Color>(bufSize, Allocator.Persistent);
             _depthBuffer = new NativeArray<float>(bufSize, Allocator.Persistent);
             _needMoveToCullingLayer = new NativeArray<bool>(1, Allocator.Persistent);
@@ -122,11 +126,11 @@ namespace SoftOcclusionCulling
             
             Matrix4x4 mvp = _matProjection * _matView * _matModel;
             if(_passSettings.FrustumCulling && URUtils.FrustumCulling(mesh.bounds, mvp)){                
-                ProfileManager.EndSample();
+                Profiler.EndSample();
                 return;
             }
             Profiler.EndSample();
-
+            
             Vector4[] clipAABB = URUtils.GetClipAABB(mesh.bounds, mvp);
             Vector4 minClip = clipAABB[0];
             Vector4 maxClip = clipAABB[7];
@@ -176,7 +180,7 @@ namespace SoftOcclusionCulling
             Profiler.EndSample();
             
             vsOutResult.Dispose();
-
+            
             Profiler.EndSample();
         }
         
@@ -307,19 +311,27 @@ namespace SoftOcclusionCulling
         {
             return y * _width + x;
         }
+        
         ~JobRasterizer()
         {
-            Debug.Log("JobRasterizer.Release");
-            Release();
+            texture = null;
+            if(_frameBuffer.IsCreated) _frameBuffer.Dispose();
+            if(_depthBuffer.IsCreated) _depthBuffer.Dispose();
+            if(_needMoveToCullingLayer.IsCreated) _needMoveToCullingLayer.Dispose();
+            temp_buf = null;
+            temp_depth_buf = null;
+            temp_needMove_buf = null;
+            Debug.Log("~JobRasterizer.Release");
         }
         public void Release()
         {
             texture = null;
-            _frameBuffer.Dispose();
-            _depthBuffer.Dispose();
-            _needMoveToCullingLayer.Dispose();
+            if(_frameBuffer.IsCreated) _frameBuffer.Dispose();
+            if(_depthBuffer.IsCreated) _depthBuffer.Dispose();
+            if(_needMoveToCullingLayer.IsCreated) _needMoveToCullingLayer.Dispose();
             temp_buf = null;
             temp_depth_buf = null;
+            temp_needMove_buf = null;
         }
     }
 }

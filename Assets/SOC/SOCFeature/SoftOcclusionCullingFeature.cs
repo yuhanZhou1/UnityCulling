@@ -40,7 +40,6 @@ namespace SoftOcclusionCulling
         public override void Create()
         {
             m_SoftDepthPass = new SoftRasterizerPass(passSettings);
-            m_SoftDepthPass.renderPassEvent = RenderPassEvent.BeforeRenderingOpaques;
         }
         
         public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
@@ -72,14 +71,19 @@ namespace SoftOcclusionCulling
         {
             this.passSettings = passSettings;
             renderPassEvent = passSettings.renderPassEvent;
+            
+            int w = Mathf.FloorToInt(120);
+            int h = Mathf.FloorToInt(67);
+            if(_cpuRasterizer == null)
+                _cpuRasterizer = new CPURasterizer(w, h, passSettings);
+            if(_jobRasterizer == null)
+                _jobRasterizer = new JobRasterizer(w, h, passSettings);
         }
 
         public override void OnCameraSetup(CommandBuffer cmd, ref RenderingData renderingData)
         {
             InitSetup(ref renderingData);
             _lastUseUnityNativeRendering = passSettings.RasterizerType;
-            // OnOffUnityRendering();
-            // InitMeshInfo();
         }
 
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
@@ -107,14 +111,16 @@ namespace SoftOcclusionCulling
 
         public override void OnCameraCleanup(CommandBuffer cmd)
         {
-            // if (!camera.gameObject.activeSelf)
-            // {
-            //     if(_cpuRasterizer!= null) _cpuRasterizer.Release();
-            //     if(_jobRasterizer!= null) _jobRasterizer.Release();
-            // }
-            // _cpuRasterizer.Release();
         }
 
+        ~SoftRasterizerPass()
+        {
+            _cpuRasterizer.Release();
+            _jobRasterizer.Release();
+            if(_rasterizer != null) _rasterizer.Release();
+            if(_lastRasterizer != null) _lastRasterizer.Release();
+            Debug.Log("~SoftRasterizerPass");
+        }
         void Render()
         {
             switch(passSettings.RasterizerType){
@@ -126,7 +132,7 @@ namespace SoftOcclusionCulling
                     break;
             }
 
-            if (_rasterizer != _lastRasterizer) {
+            if (_rasterizer != _lastRasterizer && _rasterizer != null) {
                 Debug.Log($"Change Rasterizer to {_rasterizer.Name}");
                 _lastRasterizer = _rasterizer;
                 
@@ -135,6 +141,7 @@ namespace SoftOcclusionCulling
             }
             
             var r = _rasterizer;
+            if(r == null) return;
             r.Clear(BufferMask.Color | BufferMask.Depth);
             r.SetupUniforms(camera, _mainLight);
             
@@ -166,24 +173,24 @@ namespace SoftOcclusionCulling
                     _mainLight = o.GetComponentInChildren<Light>(true);
             }
             
-            if (rawImg != null)// && _cpuRasterizer == null)
-            {
-                RectTransform rect = rawImg.GetComponent<RectTransform>();
-                rect.sizeDelta = new Vector2(120, 67);
-                // rect.sizeDelta = new Vector2(Screen.width/8, Screen.height/8);
-                int w = Mathf.FloorToInt(rect.rect.width);
-                int h = Mathf.FloorToInt(rect.rect.height);
-                // Debug.Log($"screen size: {w}x{h}");
-                if(_cpuRasterizer == null && passSettings.RasterizerType == RasterizerType.CPU)
-                    _cpuRasterizer = new CPURasterizer(w, h, passSettings);
-                if(_jobRasterizer == null && passSettings.RasterizerType == RasterizerType.CPUJobs)
-                    _jobRasterizer = new JobRasterizer(w, h, passSettings);
-            }
+            // if (rawImg != null)
+            // {
+            //     RectTransform rect = rawImg.GetComponent<RectTransform>();
+            //     rect.sizeDelta = new Vector2(120, 67);
+            //     // rect.sizeDelta = new Vector2(Screen.width/8, Screen.height/8);
+            //     int w = Mathf.FloorToInt(rect.rect.width);
+            //     int h = Mathf.FloorToInt(rect.rect.height);
+            //     // Debug.Log($"screen size: {w}x{h}");
+            //     if(_cpuRasterizer == null && passSettings.RasterizerType == RasterizerType.CPU)
+            //         _cpuRasterizer = new CPURasterizer(w, h, passSettings);
+            //     if(_jobRasterizer == null && passSettings.RasterizerType == RasterizerType.CPUJobs)
+            //         _jobRasterizer = new JobRasterizer(w, h, passSettings);
+            // }
 
             if (_statsPanel != null) {
-                if(_cpuRasterizer == null && passSettings.RasterizerType == RasterizerType.CPU)
+                if(_cpuRasterizer != null && passSettings.RasterizerType == RasterizerType.CPU)
                     _cpuRasterizer.StatDelegate += _statsPanel.StatDelegate;
-                if(_jobRasterizer == null && passSettings.RasterizerType == RasterizerType.CPUJobs)
+                if(_jobRasterizer != null && passSettings.RasterizerType == RasterizerType.CPUJobs)
                     _jobRasterizer.StatDelegate += _statsPanel.StatDelegate;
             }
 

@@ -1,0 +1,8 @@
+Base path: '/Applications/Unity/Hub/Editor/2021.3.0f1c1/Unity.app/Contents', plugins path '/Applications/Unity/Hub/Editor/2021.3.0f1c1/Unity.app/Contents/PlaybackEngines'
+Cmd: initializeCompiler
+
+Cmd: compileComputeKernel
+  insize=2707 file=Assets/SOC/URasterizer/Scripts/GPURasterizer/Shaders/URComputeShader.compute kernel=TriangleProcess cachingPP=1 ppOnly=0 stripLineD=0 buildPlatform=2 km=<UNITY_VERSION=202130> pKW=UNITY_ENABLE_REFLECTION_BUFFERS UNITY_USE_DITHER_MASK_FOR_ALPHABLENDED_SHADOWS UNITY_PBS_USE_BRDF1 UNITY_SPECCUBE_BOX_PROJECTION UNITY_SPECCUBE_BLENDING UNITY_ENABLE_DETAIL_NORMALMAP SHADER_API_DESKTOP UNITY_LIGHT_PROBE_PROXY_VOLUME UNITY_LIGHTMAP_FULL_HDR uKW=SHADER_STAGE_COMPUTE platform=metal flags=4096 reqs=16385 forceDXC=0 forceFXC=0  error: 2 plat 14 at (0): HLSLcc: Texture atomics are not supported in Metal
+  error: 1 plat 14 at Assets/SOC/URasterizer/Scripts/GPURasterizer/Shaders/URTriangleProcess.hlsl(15): use of potentially uninitialized variable (Clipped)
+ ok=0 outsize=0
+

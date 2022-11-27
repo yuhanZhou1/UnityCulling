@@ -42,7 +42,7 @@ namespace SoftOcclusionCulling
         void OnDestroy()
         {
             cpuData.Release();
-            // jobData.Release();
+            jobData.Release();
         }
 
         public Matrix4x4 GetModelMatrix()
