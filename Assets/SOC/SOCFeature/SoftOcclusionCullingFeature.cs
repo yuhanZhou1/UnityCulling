@@ -4,6 +4,8 @@ using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using System.Collections;
 using System.Collections.Generic;
+using Unity.Collections;
+using Unity.Jobs;
 using UnityEngine.UI;
 using UnityEngine.Profiling;
 
@@ -55,7 +57,8 @@ namespace SoftOcclusionCulling
         private Camera camera;
         private GameObject[] rootObjs;
         private List<RenderingObject> renderingObjects = new List<RenderingObject>();
-
+        private int screenWidth = 120;
+        private int screenHeight = 67;
         
         IRasterizer _rasterizer;
         IRasterizer _lastRasterizer;
@@ -67,13 +70,26 @@ namespace SoftOcclusionCulling
         public RawImage rawImg;
         private Light _mainLight;
         RasterizerType _lastUseUnityNativeRendering;
+        
+        
+        NativeArray<Vector3> boundsPositionData;
+        NativeArray<Vector3Int> boundstrianglesData;
+        NativeArray<Vector3> lossyScale;
+        NativeArray<Vector3> eulerAngles;
+        NativeArray<Vector3> position;
+        public NativeArray<Color> frameBuffer;
+        public NativeArray<float> depthBuffer;
+        public NativeArray<bool> needMoveToCullingLayer;
+        public NativeArray<bool> IsOccludee;
+
+
         public SoftRasterizerPass(SoftOcclusionCullingFeature.PassSettings passSettings)
         {
             this.passSettings = passSettings;
             renderPassEvent = passSettings.renderPassEvent;
             
-            int w = Mathf.FloorToInt(120);
-            int h = Mathf.FloorToInt(67);
+            int w = Mathf.FloorToInt(screenWidth);
+            int h = Mathf.FloorToInt(screenHeight);
             if(_cpuRasterizer == null)
                 _cpuRasterizer = new CPURasterizer(w, h, passSettings);
             if(_jobRasterizer == null)
@@ -82,15 +98,19 @@ namespace SoftOcclusionCulling
 
         public override void OnCameraSetup(CommandBuffer cmd, ref RenderingData renderingData)
         {
+            Profiler.BeginSample("SoftRasterizerPass.OnCameraSetup");
             InitSetup(ref renderingData);
             _lastUseUnityNativeRendering = passSettings.RasterizerType;
+            InitSocJob();
+            
+            Profiler.EndSample();
         }
 
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
         {
             var scene = renderingData.cameraData.camera.gameObject.scene;
             if (!scene.isLoaded) return;
-            
+
             CommandBuffer cmd = CommandBufferPool.Get("SoftRasterizerPass");
             if (passSettings.RasterizerType != RasterizerType.Native) {
                 Render();
@@ -115,6 +135,15 @@ namespace SoftOcclusionCulling
 
         ~SoftRasterizerPass()
         {
+            boundsPositionData.Dispose();
+            lossyScale.Dispose();
+            eulerAngles.Dispose();
+            position.Dispose();
+            boundstrianglesData.Dispose();
+            frameBuffer.Dispose();
+            depthBuffer.Dispose();
+            needMoveToCullingLayer.Dispose();
+            
             _cpuRasterizer.Release();
             _jobRasterizer.Release();
             if(_rasterizer != null) _rasterizer.Release();
@@ -135,7 +164,6 @@ namespace SoftOcclusionCulling
             if (_rasterizer != _lastRasterizer && _rasterizer != null) {
                 Debug.Log($"Change Rasterizer to {_rasterizer.Name}");
                 _lastRasterizer = _rasterizer;
-                
                 rawImg.texture = _rasterizer.ColorTexture;
                 _statsPanel.SetRasterizerType(_rasterizer.Name);  
             }
@@ -144,7 +172,7 @@ namespace SoftOcclusionCulling
             if(r == null) return;
             r.Clear(BufferMask.Color | BufferMask.Depth);
             r.SetupUniforms(camera, _mainLight);
-            
+
             for (int i=0; i<renderingObjects.Count; ++i)
             {
                 if (renderingObjects[i].gameObject.activeInHierarchy && renderingObjects[i].Occluder) {                    
@@ -154,6 +182,72 @@ namespace SoftOcclusionCulling
             
             r.UpdateFrame();
         }
+        void SOCCulling()
+        {
+
+            // foreach (var obj in renderingObjects)
+            // {
+            //     if (obj.gameObject.activeInHierarchy && obj.Occludee)
+            //     {
+            //         obj.NeedMoveToCullingLayer = true;
+            //         _rasterizer.OcclusionCulling(obj);
+            //         if (obj.NeedMoveToCullingLayer) {
+            //             obj.gameObject.layer = 6;
+            //         }
+            //         else {
+            //             obj.gameObject.layer = 0;
+            //         }
+            //     }
+            // }
+
+            if(renderingObjects.Count == 0) return;
+            Profiler.BeginSample("ObjectCullingJob");
+            ObjectCullingJob obJob = new ObjectCullingJob();
+            obJob.boundstrianglesData = boundstrianglesData;            // 每个AABB12个三角形
+            obJob.frameBuffer = frameBuffer;
+            obJob.depthBuffer = depthBuffer;
+            obJob.NeedMoveToCullingLayer = needMoveToCullingLayer;
+            
+            obJob.screenWidth = screenWidth;
+            obJob.screenHeight = screenHeight;
+            
+            obJob.boundsPositionData = boundsPositionData;            // 每个AABB24个Position           
+            obJob.lossyScale = lossyScale;
+            obJob.eulerAngles = eulerAngles;
+            obJob.position = position;
+            
+            obJob.cameraPos = camera.transform.position;
+            obJob.cameraForward = camera.transform.forward;
+            obJob.cameraUp = camera.transform.up;
+            obJob.cameraOrthographic = camera.orthographic;
+            obJob.cameraOrthographicSize = camera.orthographicSize;
+            obJob.cameraFarClipPlane = camera.farClipPlane;
+            obJob.cameraNearClipPlane = camera.nearClipPlane;
+            obJob.cameraFieldOfView = camera.fieldOfView;
+            
+            obJob._matView = _jobRasterizer._matView;
+            obJob._matProjection = _jobRasterizer._matProjection;
+            
+            obJob.IsOccludee = IsOccludee;
+            
+            JobHandle handle = obJob.Schedule(renderingObjects.Count, 1);
+            handle.Complete();
+            Profiler.EndSample();
+            
+            for (int i=0; i<renderingObjects.Count; ++i)
+            {
+                if(renderingObjects[i].Occluder)
+                    continue;
+                if (needMoveToCullingLayer[i] == true) {
+                    renderingObjects[i].gameObject.layer = 6;
+                }
+                else {
+                    renderingObjects[i].gameObject.layer = 0;
+                }
+            }
+            _rasterizer.UpdateFrame();
+        }
+        
         void InitSetup(ref RenderingData renderingData)
         {
             var scene = renderingData.cameraData.camera.gameObject.scene;
@@ -172,20 +266,6 @@ namespace SoftOcclusionCulling
                 if (_mainLight == null)
                     _mainLight = o.GetComponentInChildren<Light>(true);
             }
-            
-            // if (rawImg != null)
-            // {
-            //     RectTransform rect = rawImg.GetComponent<RectTransform>();
-            //     rect.sizeDelta = new Vector2(120, 67);
-            //     // rect.sizeDelta = new Vector2(Screen.width/8, Screen.height/8);
-            //     int w = Mathf.FloorToInt(rect.rect.width);
-            //     int h = Mathf.FloorToInt(rect.rect.height);
-            //     // Debug.Log($"screen size: {w}x{h}");
-            //     if(_cpuRasterizer == null && passSettings.RasterizerType == RasterizerType.CPU)
-            //         _cpuRasterizer = new CPURasterizer(w, h, passSettings);
-            //     if(_jobRasterizer == null && passSettings.RasterizerType == RasterizerType.CPUJobs)
-            //         _jobRasterizer = new JobRasterizer(w, h, passSettings);
-            // }
 
             if (_statsPanel != null) {
                 if(_cpuRasterizer != null && passSettings.RasterizerType == RasterizerType.CPU)
@@ -194,40 +274,54 @@ namespace SoftOcclusionCulling
                     _jobRasterizer.StatDelegate += _statsPanel.StatDelegate;
             }
 
+            if (rawImg != null)
+            {
+                RectTransform rect = rawImg.GetComponent<RectTransform>();
+                rect.sizeDelta = new Vector2(screenWidth, screenHeight);
+            }
+
             OnOffUnityRendering();
         }
-        
-        void InitMeshInfo()
+
+        void InitSocJob()
         {
-            // Init Mesh 
-            // foreach (var obj in renderingObjects)
-            // {
-            //     if (obj.gameObject.activeInHierarchy)
-            //     {
-            //         if (obj.mesh == null)
-            //         {
-            //             var meshFilter = obj.gameObject.GetComponent<MeshFilter>();
-            //             if (meshFilter != null)
-            //                 obj.mesh = meshFilter.sharedMesh;
-            //         }
-            //
-            //         if (obj.texture == null)
-            //         {
-            //             var meshRenderer = obj.GetComponent<MeshRenderer>();
-            //             if (meshRenderer != null && meshRenderer.sharedMaterial != null)
-            //                 obj.texture = meshRenderer.sharedMaterial.mainTexture as Texture2D;
-            //         }
-            //
-            //         if(obj.texture==null)
-            //             obj.texture = Texture2D.whiteTexture;
-            //
-            //         if (obj.mesh != null && obj.cpuData == null)
-            //         {
-            //             obj.cpuData = new CPURenderObjectData(obj.mesh);
-            //             obj.jobData = new JobRenderObjectData(obj.mesh);
-            //         }
-            //     }
-            // }
+            if(renderingObjects.Count == 0) return;
+            Profiler.BeginSample("SoftRasterizerPass.InitSocJob1");
+            if(!boundsPositionData.IsCreated) boundsPositionData = new NativeArray<Vector3>(renderingObjects.Count * 24,Allocator.Persistent);
+            if(!lossyScale.IsCreated) lossyScale = new NativeArray<Vector3>(renderingObjects.Count,Allocator.Persistent);
+            if(!eulerAngles.IsCreated) eulerAngles = new NativeArray<Vector3>(renderingObjects.Count,Allocator.Persistent);
+            if(!position.IsCreated) position = new NativeArray<Vector3>(renderingObjects.Count,Allocator.Persistent);
+            if(!needMoveToCullingLayer.IsCreated) needMoveToCullingLayer = new NativeArray<bool>(renderingObjects.Count,Allocator.Persistent);
+            // needMoveToCullingLayer[0] = true;
+            if(!boundstrianglesData.IsCreated) boundstrianglesData = new NativeArray<Vector3Int>(12,Allocator.Persistent);
+            if(!IsOccludee.IsCreated) IsOccludee = new NativeArray<bool>(renderingObjects.Count,Allocator.Persistent);
+            if (_jobRasterizer != null)
+            {
+                frameBuffer = _jobRasterizer._frameBuffer;
+                depthBuffer = _jobRasterizer._depthBuffer;
+            }
+            Profiler.EndSample();
+            
+            Profiler.BeginSample("SoftRasterizerPass.InitSocJob2");
+            for (int i=0; i<renderingObjects.Count; ++i)
+            {
+                if (renderingObjects[i].jobData != null)
+                {
+                    for (int j = 0; j < 24; ++j)
+                        boundsPositionData[i * 24 + j] = renderingObjects[i].jobData.boundsData[j];
+                    lossyScale[i] = renderingObjects[i].jobData.lossyScale;
+                    eulerAngles[i] = renderingObjects[i].jobData.eulerAngles;
+                    position[i] = renderingObjects[i].jobData.position;
+                    boundstrianglesData = renderingObjects[i].jobData.boundstrianglesData;
+                    needMoveToCullingLayer[i] = true;
+                    if (renderingObjects[i].Occluder) {
+                        IsOccludee[i] = false;
+                    }
+                    else { IsOccludee[i] = true; }
+                    
+                }
+            }
+            Profiler.EndSample();
         }
         void OnOffUnityRendering()
         {
@@ -244,26 +338,7 @@ namespace SoftOcclusionCulling
                 }
             }
         }
-
-        void SOCCulling()
-        {
-            foreach (var obj in renderingObjects)
-            {
-                if (obj.gameObject.activeInHierarchy && obj.Occludee)
-                {
-                    obj.NeedMoveToCullingLayer = true;
-                    _rasterizer.OcclusionCulling(obj);
-                    if (obj.NeedMoveToCullingLayer) {
-                        obj.gameObject.layer = 6;
-                    }
-                    else {
-                        obj.gameObject.layer = 0;
-                    }
-                }
-            }
-            // _rasterizer.UpdateFrame();
-            
-        }
+        
     }
 
 }

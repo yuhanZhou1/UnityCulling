@@ -12,17 +12,16 @@ namespace SoftOcclusionCulling
 
         SoftOcclusionCullingFeature.PassSettings _passSettings;
 
-        Matrix4x4 _matModel;
-        Matrix4x4 _matView;
-        Matrix4x4 _matProjection;
+        public Matrix4x4 _matModel;
+        public Matrix4x4 _matView;
+        public Matrix4x4 _matProjection;
 
-        NativeArray<Color> _frameBuffer;
-        NativeArray<float> _depthBuffer;
-        NativeArray<bool> _needMoveToCullingLayer;
+        public NativeArray<Color> _frameBuffer;
+        public NativeArray<float> _depthBuffer;
+        public NativeArray<bool> _needMoveToCullingLayer;
 
         Color[] temp_buf;
         float[] temp_depth_buf;
-        bool[] temp_needMove_buf;
 
         public Texture2D texture;
 
@@ -66,9 +65,7 @@ namespace SoftOcclusionCulling
 
             temp_buf = new Color[bufSize];
             temp_depth_buf = new float[bufSize];
-            temp_needMove_buf = new bool[1];
             URUtils.FillArray<float>(temp_depth_buf,0);
-            URUtils.FillArray<bool>(temp_needMove_buf,true);
         }
 
         public void Clear(BufferMask mask)
@@ -116,7 +113,7 @@ namespace SoftOcclusionCulling
                 return;
             }
             Profiler.BeginSample("DrawObject.CopyFrom");
-            _needMoveToCullingLayer.CopyFrom(temp_needMove_buf);
+            _needMoveToCullingLayer[0] = true;
             Profiler.EndSample();
             
             Profiler.BeginSample("DrawObject.FrustumCulling");
@@ -191,7 +188,60 @@ namespace SoftOcclusionCulling
                 Profiler.EndSample();
                 return;
             }
-            _needMoveToCullingLayer.CopyFrom(temp_needMove_buf);
+            _needMoveToCullingLayer[0] = true;
+            
+            Mesh mesh = ro.mesh;
+            
+            Profiler.BeginSample("FrustumCulling.GetModelMatrix");
+            _matModel = ro.GetModelMatrix();
+            Profiler.EndSample();
+            
+            Matrix4x4 mvp = _matProjection * _matView * _matModel;
+            if(_passSettings.FrustumCulling && URUtils.FrustumCulling(mesh.bounds, mvp)){                
+                Profiler.EndSample();
+                return;
+            }
+            
+            Vector4[] clipAABB = URUtils.GetClipAABB(mesh.bounds, mvp);
+            Vector4 minClip = clipAABB[0];
+            Vector4 maxClip = clipAABB[7];
+            minClip.z /= minClip.w;
+            maxClip.z /= maxClip.w;
+            minClip.z = minClip.z * 0.5f + 0.5f;
+            maxClip.z = maxClip.z * 0.5f + 0.5f;
+
+            _verticesAll += mesh.vertexCount;
+            _trianglesAll += ro.cpuData.MeshTriangles.Length / 3;
+
+            TriangleCullingJob triJob = new TriangleCullingJob();
+            triJob.trianglesData = ro.jobData.boundstrianglesData;
+            triJob.frameBuffer = _frameBuffer;
+            triJob.depthBuffer = _depthBuffer;
+            triJob.screenWidth = _width;
+            triJob.screenHeight = _height;
+            triJob.NeedMoveToCullingLayer = _needMoveToCullingLayer;
+            triJob.maxClip = maxClip;
+            triJob.minClip = minClip;
+            
+            triJob.positionData = ro.jobData.boundsData;
+            triJob.mvpMat = mvp;
+            JobHandle triHandle = triJob.Schedule(ro.jobData.boundstrianglesData.Length, 2);
+            triHandle.Complete();
+            
+            if(_needMoveToCullingLayer[0] == false)
+                ro.NeedMoveToCullingLayer = false;
+
+            Profiler.EndSample();
+        }
+        
+        public void OcclusionCulling1(RenderingObject ro)
+        {
+            Profiler.BeginSample("JobRasterizer.OcclusionCulling");
+            if (ro.mesh == null || ro.jobData == null) {
+                Profiler.EndSample();
+                return;
+            }
+            _needMoveToCullingLayer[0] = true;
             
             Mesh mesh = ro.mesh;
             
@@ -301,7 +351,7 @@ namespace SoftOcclusionCulling
 
             if (StatDelegate != null)
             {
-                StatDelegate(_verticesAll, _trianglesAll, _trianglesRendered);
+                // StatDelegate(_verticesAll, _trianglesAll, _trianglesRendered);
             }
 
             Profiler.EndSample();
@@ -320,7 +370,6 @@ namespace SoftOcclusionCulling
             if(_needMoveToCullingLayer.IsCreated) _needMoveToCullingLayer.Dispose();
             temp_buf = null;
             temp_depth_buf = null;
-            temp_needMove_buf = null;
             Debug.Log("~JobRasterizer.Release");
         }
         public void Release()
@@ -331,7 +380,6 @@ namespace SoftOcclusionCulling
             if(_needMoveToCullingLayer.IsCreated) _needMoveToCullingLayer.Dispose();
             temp_buf = null;
             temp_depth_buf = null;
-            temp_needMove_buf = null;
         }
     }
 }

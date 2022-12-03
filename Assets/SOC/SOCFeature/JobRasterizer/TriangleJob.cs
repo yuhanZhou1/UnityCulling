@@ -218,7 +218,7 @@ namespace SoftOcclusionCulling
                 {
                     //深度测试(注意我们这儿的z值越大越靠近near plane，因此大值通过测试）
                     int index = GetIndex(x, y);
-                    frameBuffer[index] = Color.white;
+                    // frameBuffer[index] = Color.white;
                     if (minClip.z >= depthBuffer[index])
                     {
                         depthBuffer[index] = maxClip.z;

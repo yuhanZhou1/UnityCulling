@@ -37,6 +37,9 @@ namespace SoftOcclusionCulling
             if (mesh != null) {
                 cpuData = new CPURenderObjectData(mesh);
                 jobData = new JobRenderObjectData(mesh);
+                jobData.lossyScale = transform.lossyScale;
+                jobData.eulerAngles = transform.rotation.eulerAngles;
+                jobData.position = transform.position;
             }
         }
         void OnDestroy()
